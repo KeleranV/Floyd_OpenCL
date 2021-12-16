@@ -74,7 +74,7 @@ void main(){
 
     cl::Program::Sources sources;
 
-    std::string kernel_code =
+    /*std::string kernel_code =
         "void kernel generate(global int* M, global const int* n){"
         "   __private int o;"
         "   __private int i = get_global_id(0);"
@@ -94,31 +94,29 @@ void main(){
         "       }"
         "       M[o] = *n + 1; "
         "   }"
-        "}";
-
-    kernel_code +=
-        "void kernel floyd_1_itt(global int* M, global int* n, global int * Mk)"
-        "{"
-        "   __private int k;"
-        "   __private int o = get_global_id(0);"
-        "   __private int op1;"
-        "   __private int op2;"
-        "   __private int i = o / *n;"
-        "   __private int j = o % *n;"
-        "   for(k = 0; k < *n; k++)"
+        "}";*/
+    std::string kernel_code =
+        "void kernel generate(global int* M, global const int* n){"
+        "   __private int o;"
+        "   __private int i = get_global_id(0);"
+        "   __private int j = get_global_id(1);"
+        "   o = i * (*n) + j;"
+        "   if(i == j)"
         "   {"
-        "       op1 = i * (*n) + k;"
-        "       op2 = k * (*n) + j;"
-        "       if(M[o] < M[op1] + M[op2])"  
-        "       {"
-        "           Mk[o] = M[o];"
-        "       }"
-        "       else"
-        "       {"
-        "           Mk[o] = M[op1] + M[op2];"
-        "       }"
+        "       M[o] = 0;"
+        "       return;"      
+        "   }"
+        "   if(i < (*n) - 1)"
+        "   {"
+        "       M[o] = 1;"
+        "       return;"
+        "   }"
+        "   else"
+        "   {"
+        "       M[o] = *n + 1; "
         "   }"
         "}";
+
 
     sources.push_back({ kernel_code.c_str(), kernel_code.length() });
 
@@ -138,6 +136,7 @@ void main(){
     cl::Buffer buff_M(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
     cl::Buffer buff_n(context, CL_MEM_READ_WRITE, sizeof(int));
     cl::Buffer buff_Mk(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
+    cl::Buffer buff_k(context, CL_MEM_READ_WRITE, sizeof(int));
     //Checker si on pourrait pas utiliser moins de buffer ?
 
 
@@ -151,7 +150,7 @@ void main(){
     generate.setArg(0, buff_M);
     generate.setArg(1, buff_n);
 
-    queue.enqueueNDRangeKernel(generate, cl::NullRange, cl::NDRange(n), cl::NullRange);
+    queue.enqueueNDRangeKernel(generate, cl::NullRange, cl::NDRange(n, n), cl::NullRange);
     queue.finish();
 
     queue.enqueueReadBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
@@ -170,20 +169,50 @@ void main(){
 
     //Utilisation de la version classique de l'algo de Floyd
     //On devra le faire n fois
-    
+    std::string kernel_code_floyd =
+        "void kernel floyd_1_itt(global read_only int* M, global read_only int* n, global write_only int * Mk, global read_only int* k)"
+        "{"
+        "   __private int op1;"
+        "   __private int op2;"
+        "   __private int i = get_global_id(0);"
+        "   __private int j = get_global_id(1);"
+        "   __private int o = i * (*n) + j;"
+        "   op1 = i * (*n) + (*k);"
+        "   op2 = (*k) * (*n) + j;"
+        "   if(M[o] < M[op1] + M[op2])"
+        "   {"
+        "       Mk[o] = M[o];"
+        "   }"
+        "   else"
+        "   {"
+        "       Mk[o] = M[op1] + M[op2];"
+        "   }"
+        "}";
+    cl::Program::Sources sources_floyd;
+
+    sources_floyd.push_back({ kernel_code_floyd.c_str(), kernel_code_floyd.length() });
+
+    cl::Program program_floyd(context, sources_floyd);
+    if (program_floyd.build({ default_device }) != CL_SUCCESS) {
+        std::cout << " Error building: " << program_floyd.getBuildInfo<CL_PROGRAM_BUILD_LOG>(default_device) << "\n";
+        exit(1);
+    }
+
+
+    cl::Kernel floyd_1_itt(program_floyd, "floyd_1_itt");
 
     //proto : floyd_1_itt(global int* M, global int* n, global int * Mk)
-
-    cl::Kernel floyd_1_itt(program, "floyd_1_itt");
 
     for (int k = 0; k < n; k++) {
         queue.enqueueWriteBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
         queue.enqueueWriteBuffer(buff_n, CL_TRUE, 0, sizeof(int), &n);
         queue.enqueueWriteBuffer(buff_Mk, CL_TRUE, 0, n * n * sizeof(int*), matr_k);
+        queue.enqueueWriteBuffer(buff_k, CL_TRUE, 0, sizeof(int), &k);
         floyd_1_itt.setArg(0, buff_M);
         floyd_1_itt.setArg(1, buff_n);
         floyd_1_itt.setArg(2, buff_Mk);
-        queue.enqueueNDRangeKernel(floyd_1_itt, cl::NullRange, cl::NDRange(n * n), cl::NullRange);
+        floyd_1_itt.setArg(3, buff_k);
+        queue.enqueueNDRangeKernel(floyd_1_itt, cl::NullRange, cl::NDRange(n, n), cl::NullRange);
         queue.finish();
 
         queue.enqueueReadBuffer(buff_Mk, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
