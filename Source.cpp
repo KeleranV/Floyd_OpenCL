@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <math.h>
 
 
 #include <CL/cl.hpp>
+
 #include <vector>
 
 
@@ -43,12 +45,12 @@ void init(int n){
 void main(){
 
     
-    //Pas besoin de parraléliser cette attribution
+    //Pas besoin de parralï¿½liser cette attribution
     matr_adj = (int*)calloc(n * n, sizeof(int*));
     matr_adj[n - 1] = 1;
     matr_adj[n * (n - 1)] = 1;
 
-    //Test initial pour vérifier que le PC est compatible avec OpenCL
+    //Test initial pour vï¿½rifier que le PC est compatible avec OpenCL
     std::vector<cl::Platform> all_platforms;
     cl::Platform::get(&all_platforms);
     if (all_platforms.size() == 0) {
@@ -107,7 +109,7 @@ void main(){
     //int offset;
 
 
-    //Création des buffers
+    //Crï¿½ation des buffers
     cl::Buffer buff_M(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
     cl::Buffer buff_Itt(context, CL_MEM_READ_WRITE, sizeof(int) * n);
     cl::Buffer buff_n(context, CL_MEM_READ_WRITE, sizeof(int));
@@ -142,5 +144,32 @@ void main(){
         }
         std::cout << std::endl;
     }
+
     
+
+
+    //TODO : Faire Floyd avec la mÃªme approche
+    //approche : 1 thread par case
+    kernel_code = 
+        "void kernel floyd(global int* M, global int* n, global int * isDone)"
+        "{"
+        "   __private int k;"
+        "   __private int o = get_global_id(0);"
+        "   __private int op1;"
+        "   __private int op2;"
+        "   __private int i = o / *n;"
+        "   __private int j = o "+"%"+" *n;"
+        "   for(k = 0; k < *n; k++)"
+        "   {"
+        "       op1 = i * (*n) + k;"
+        "       op2 = k * (*n) + j;"
+        "       while((isDone[op1] == 0) || (isDone[op2] == 0));"
+        "       M[o] = std::min(M[o], (M[op1] + M[op2]));"
+        "   "
+        "   "
+        "   }"
+        "   isDone[o] = 1;"
+        "}"
+
+
 }
