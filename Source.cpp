@@ -258,9 +258,9 @@ void main() {
         queue.enqueueNDRangeKernel(floyd_1_itt, cl::NullRange, cl::NDRange(n, n), cl::NullRange);
         queue.finish();
 
-        queue.enqueueReadBuffer(buff_Mk, CL_TRUE, 0, n * n * sizeof(int*), matr_k);
+        queue.enqueueReadBuffer(buff_Mk, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
         queue.finish();
-        memcpy(matr_adj, matr_k, n * n * sizeof(int*));
+        //memcpy(matr_adj, matr_k, n * n * sizeof(int*));
 
         
     }
