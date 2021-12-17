@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <iostream>
 #include <math.h>
-
+#include <chrono>
 
 #include <CL/cl.hpp>
+
 
 #include <vector>
 
@@ -42,13 +43,14 @@ void init(int n){
 }
 */
 
-void main(){
+void main() {
 
-    
+    std::cin >> n;
+
     //Pas besoin de parraléliser cette attribution
     matr_adj = (int*)calloc(n * n, sizeof(int*));
     int* matr_k = (int*)calloc(n * n, sizeof(int*));
-    matr_adj[n - 1] = 1;
+    //matr_adj[n - 1] = 1;
     matr_adj[n * (n - 1)] = 1;
 
     //Test initial pour v�rifier que le PC est compatible avec OpenCL
@@ -70,7 +72,56 @@ void main(){
     cl::Device default_device = all_devices[0];
     std::cout << "Using device: " << default_device.getInfo<CL_DEVICE_NAME>() << "\n";
 
+    
+
     cl::Context context({ default_device });
+
+
+    //Creation des buffers
+    cl::Buffer buff_M(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
+    cl::Buffer buff_n(context, CL_MEM_READ_WRITE, sizeof(int));
+    cl::Buffer buff_Mk(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
+    cl::Buffer buff_k(context, CL_MEM_READ_WRITE, sizeof(int));
+
+
+    cl::Program::Sources init_sources;
+
+
+    std::string init_kernel =
+        "void kernel init(global int* M, global int* n){"
+        "   __private int o;"
+        "   __private int i = get_global_id(0);"
+        "   __private int j = get_global_id(1);"
+        "   o = i * (*n) + j;"
+        "   M[o] = *n + 1; "
+        "}";
+
+    init_sources.push_back({init_kernel.c_str(), init_kernel.length()});
+
+    cl::Program program_init(context, init_sources);
+    if (program_init.build({ default_device }) != CL_SUCCESS) {
+        std::cout << " Error building: " << program_init.getBuildInfo<CL_PROGRAM_BUILD_LOG>(default_device) << "\n";
+        exit(1);
+    }
+
+    cl::CommandQueue queue(context, default_device);
+
+    queue.enqueueWriteBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
+    queue.enqueueWriteBuffer(buff_n, CL_TRUE, 0, sizeof(int), &n);
+
+    cl::Kernel init(program_init, "init");
+    init.setArg(0, buff_M);
+    init.setArg(1, buff_n);
+
+    queue.enqueueNDRangeKernel(init, cl::NullRange, cl::NDRange(n, n), cl::NullRange);
+    queue.finish();
+
+    queue.enqueueReadBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
+    queue.finish();
+
+
+
+
 
     cl::Program::Sources sources;
 
@@ -108,6 +159,7 @@ void main(){
         "   }"
         "   if(i < (*n) - 1)"
         "   {"
+        "       o = i * (*n) + i + 1;"
         "       M[o] = 1;"
         "       return;"
         "   }"
@@ -127,21 +179,7 @@ void main(){
     }
 
 
-    //int debug = 10;
-    //init(debug);
-    //int offset;
 
-
-    //Cr�ation des buffers
-    cl::Buffer buff_M(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
-    cl::Buffer buff_n(context, CL_MEM_READ_WRITE, sizeof(int));
-    cl::Buffer buff_Mk(context, CL_MEM_READ_WRITE, n * n * sizeof(int*));
-    cl::Buffer buff_k(context, CL_MEM_READ_WRITE, sizeof(int));
-    //Checker si on pourrait pas utiliser moins de buffer ?
-
-
-
-    cl::CommandQueue queue(context, default_device);
 
     queue.enqueueWriteBuffer(buff_M, CL_TRUE,0, n * n * sizeof(int*), matr_adj);
     queue.enqueueWriteBuffer(buff_n, CL_TRUE, 0, sizeof(int), &n);
@@ -156,7 +194,7 @@ void main(){
     queue.enqueueReadBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
     queue.finish();
 
-
+    /*
     for(int i = 0; i < n; i++){
         for(int j = 0; j < n; j++){
             offset = i * n + j;
@@ -165,7 +203,7 @@ void main(){
         std::cout << std::endl;
     }
     std::cout << std::endl;
-
+    */
 
     //Utilisation de la version classique de l'algo de Floyd
     //On devra le faire n fois
@@ -201,9 +239,14 @@ void main(){
 
     cl::Kernel floyd_1_itt(program_floyd, "floyd_1_itt");
 
-    //proto : floyd_1_itt(global int* M, global int* n, global int * Mk)
+    //proto : floyd_1_itt(global read_only int* M, global read_only int* n, global write_only int * Mk, global read_only int* k)
 
-    for (int k = 0; k < n; k++) {
+
+    
+    int k;
+    
+    auto start = std::chrono::high_resolution_clock::now();
+    for (k = 0; k < n; k++) {
         queue.enqueueWriteBuffer(buff_M, CL_TRUE, 0, n * n * sizeof(int*), matr_adj);
         queue.enqueueWriteBuffer(buff_n, CL_TRUE, 0, sizeof(int), &n);
         queue.enqueueWriteBuffer(buff_Mk, CL_TRUE, 0, n * n * sizeof(int*), matr_k);
@@ -222,6 +265,12 @@ void main(){
         
     }
 
+    auto end = std::chrono::high_resolution_clock::now();
+
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    
+    std::cout << duration.count() << std::endl;
+    /*
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             offset = i * n + j;
@@ -229,4 +278,7 @@ void main(){
         }
         std::cout << std::endl;
     }
+    */
+    free(matr_adj);
+    free(matr_k);
 }
